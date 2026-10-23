@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 (2026-10-23)
+
+GitHub API base URL can be overridden with `CIDIFF_GITHUB_BASE_URL` (fallback `GITHUB_BASE_URL`, default https://api.github.com) so the tool can run through a local proxy at the authenticated rate limit — the same pattern as Greenlight's `GREENLIGHT_GITHUB_BASE_URL` (PT-1). 24 tests passing.
+
 ## 0.1.0 (2026-10-19)
 
 First release. Wave 1, package 2 of the 100-packages plan.

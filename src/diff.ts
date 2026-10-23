@@ -16,9 +16,22 @@ import type {
   FetchFn,
 } from "./types.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.1.1";
 
-const GH_API = "https://api.github.com";
+const DEFAULT_API = "https://api.github.com";
+
+/**
+ * The GitHub API base in use. CIDIFF_GITHUB_BASE_URL wins, then the generic
+ * GITHUB_BASE_URL, then the public API — the same pattern as Greenlight's
+ * GREENLIGHT_GITHUB_BASE_URL, so cidiff can run through a vault-backed
+ * localhost proxy (gh-proxy). Trailing slashes are stripped.
+ */
+export function githubApiBase(): string {
+  for (const raw of [process.env.CIDIFF_GITHUB_BASE_URL, process.env.GITHUB_BASE_URL]) {
+    if (raw && raw.trim().length > 0) return raw.trim().replace(/\/+$/, "");
+  }
+  return DEFAULT_API;
+}
 
 const FAILING = new Set(["failure", "timed_out"]);
 const PASSING = new Set(["success"]);
@@ -332,7 +345,7 @@ async function ghJson(
   path: string,
   token?: string,
 ): Promise<Record<string, unknown>> {
-  const res = await fetchFn(`${GH_API}${path}`, { headers: ghHeaders(token) });
+  const res = await fetchFn(`${githubApiBase()}${path}`, { headers: ghHeaders(token) });
   if (!res.ok) {
     throw new Error(`GitHub API ${res.status} for ${path}`);
   }
@@ -371,7 +384,7 @@ export async function fetchStatuses(
   sha: string,
   token?: string,
 ): Promise<CheckRunSummary[]> {
-  const res = await fetchFn(`${GH_API}/repos/${owner}/${repo}/commits/${sha}/status`, {
+  const res = await fetchFn(`${githubApiBase()}/repos/${owner}/${repo}/commits/${sha}/status`, {
     headers: ghHeaders(token),
   });
   if (!res.ok) return [];
