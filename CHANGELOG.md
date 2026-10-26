@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 (2026-10-25)
+
+Flaky test attribution. classifyRuns previously deduped to the newest run per check name and threw the rest away, so a check that passed and failed on the same commit (same code, rerun) was attributed as confidently as a stable one. Now the discarded runs count as evidence: when completed real check runs for a check on one commit disagree, the verdict is flagged `flaky` with head and base attempt counts, comparative attributions resting on an unstable side (introduced, pre-existing, fixed) are withheld as indeterminate, and the report gains a `flaky` total plus a `[FLAKY]` line in the text output. A passing latest outcome keeps its passing verdict, flagged. Legacy commit statuses (synthetic id 0) are not reruns and never count as attempts. The action_required fixtures from the backlog already existed and are unchanged. 31 tests passing.
+
 ## 0.1.1 (2026-10-23)
 
 GitHub API base URL can be overridden with `CIDIFF_GITHUB_BASE_URL` (fallback `GITHUB_BASE_URL`, default https://api.github.com) so the tool can run through a local proxy at the authenticated rate limit — the same pattern as Greenlight's `GREENLIGHT_GITHUB_BASE_URL` (PT-1). 24 tests passing.

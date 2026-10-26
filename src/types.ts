@@ -31,6 +31,18 @@ export interface CheckVerdict {
   baseConclusion: string | null;
   detail: string;
   htmlUrl?: string;
+  /**
+   * True when the completed check runs for this check on one commit
+   * disagree with each other (at least one pass and at least one fail on
+   * the same commit). That is flaky evidence: a single outcome from an
+   * unstable side cannot support a confident attribution, so failing
+   * verdicts that would rest on it are withheld as indeterminate.
+   */
+  flaky?: boolean;
+  /** Completed real check runs seen for this check on the head commit. */
+  headAttempts?: number;
+  /** Completed real check runs seen for this check on the base commit. */
+  baseAttempts?: number;
 }
 
 export interface DiffReport {
@@ -42,6 +54,8 @@ export interface DiffReport {
   counts: Record<Category, number>;
   /** Failing checks the PR introduced. The CLI exit code is 1 when > 0. */
   introduced: number;
+  /** Verdicts whose evidence is flaky (runs on one commit disagreed). */
+  flaky: number;
   /**
    * Report level caveats, e.g. no check evidence exists on the head commit
    * at all, or CI is waiting on maintainer approval (fork PRs). A report

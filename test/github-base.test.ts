@@ -54,7 +54,7 @@ describe("githubApiBase (PT-1)", () => {
     assert.ok(seen[0].startsWith("http://proxy.invalid:8792/repos/o/r/commits/abc123/check-runs"), seen[0]);
   });
 
-  it("release version is 0.1.1", () => {
-    assert.equal(VERSION, "0.1.1");
+  it("release version is 0.1.2", () => {
+    assert.equal(VERSION, "0.1.2");
   });
 });

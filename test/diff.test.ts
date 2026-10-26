@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildReport, classifyRuns, dedupeRuns, isExternalName, mapStatuses } from "../src/diff.js";
+import { buildReport, classifyRuns, dedupeRuns, isExternalName, mapStatuses, renderReport } from "../src/diff.js";
 import type { CheckRunSummary } from "../src/types.js";
 
 let seq = 0;
@@ -95,6 +95,70 @@ describe("classifyRuns", () => {
   it("timed_out counts as failing", () => {
     const v = classifyRuns([run("test", "timed_out")], [run("test", "success")]);
     assert.equal(byName(v, "test")?.category, "introduced");
+  });
+});
+
+describe("flaky evidence (runs on the same commit disagree)", () => {
+  it("head unstable: an earlier pass and a newest failure is NOT introduced", () => {
+    // Same head commit, same code: one completed run passed, a rerun failed.
+    // Attributing that failure to the PR would be guessing.
+    const head = [run("test", "success"), run("test", "failure")];
+    const v = classifyRuns(head, [run("test", "success")]);
+    const verdict = byName(v, "test");
+    assert.equal(verdict?.category, "indeterminate");
+    assert.equal(verdict?.flaky, true);
+    assert.equal(verdict?.headAttempts, 2);
+    assert.match(verdict?.detail ?? "", /Flaky evidence/);
+  });
+
+  it("head unstable with a passing newest run stays passing, flagged flaky", () => {
+    const head = [run("test", "failure"), run("test", "success")];
+    const v = classifyRuns(head, [run("test", "success")]);
+    const verdict = byName(v, "test");
+    assert.equal(verdict?.category, "passing");
+    assert.equal(verdict?.flaky, true);
+  });
+
+  it("base unstable: failing on both newest outcomes is NOT confidently pre-existing", () => {
+    const base = [run("test", "success"), run("test", "failure")];
+    const v = classifyRuns([run("test", "failure")], base);
+    const verdict = byName(v, "test");
+    assert.equal(verdict?.category, "indeterminate");
+    assert.equal(verdict?.flaky, true);
+    assert.equal(verdict?.baseAttempts, 2);
+  });
+
+  it("base unstable: a passing head is NOT confidently fixed", () => {
+    const base = [run("test", "success"), run("test", "failure")];
+    const v = classifyRuns([run("test", "success")], base);
+    const verdict = byName(v, "test");
+    assert.equal(verdict?.category, "indeterminate");
+    assert.equal(verdict?.flaky, true);
+  });
+
+  it("stable duplicate runs (same outcome twice) keep their attribution and are not flaky", () => {
+    const head = [run("test", "failure"), run("test", "failure")];
+    const v = classifyRuns(head, [run("test", "success")]);
+    const verdict = byName(v, "test");
+    assert.equal(verdict?.category, "introduced");
+    assert.equal(verdict?.flaky, undefined);
+    assert.equal(verdict?.headAttempts, 2);
+  });
+
+  it("timed_out counts toward the failing side of a disagreement", () => {
+    const head = [run("test", "success"), run("test", "timed_out")];
+    const v = classifyRuns(head, [run("test", "success")]);
+    assert.equal(byName(v, "test")?.flaky, true);
+    assert.equal(byName(v, "test")?.category, "indeterminate");
+  });
+
+  it("buildReport counts flaky verdicts and renderReport names them", () => {
+    const head = [run("test", "success"), run("test", "failure"), run("lint", "success")];
+    const verdicts = classifyRuns(head, [run("test", "success"), run("lint", "success")]);
+    const report = buildReport("acme/repo", "head", "base", verdicts, 7);
+    assert.equal(report.flaky, 1);
+    assert.equal(report.introduced, 0);
+    assert.match(renderReport(report), /\[FLAKY\] test/);
   });
 });
 

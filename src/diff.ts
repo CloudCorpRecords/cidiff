@@ -16,7 +16,7 @@ import type {
   FetchFn,
 } from "./types.js";
 
-export const VERSION = "0.1.1";
+export const VERSION = "0.1.2";
 
 const DEFAULT_API = "https://api.github.com";
 
@@ -248,7 +248,51 @@ function classifyOne(
   };
 }
 
-/** Pure classification: head runs vs base runs. */
+interface AttemptStats {
+  /** Completed real check runs (legacy statuses, synthetic id 0, are not reruns and do not count). */
+  attempts: number;
+  passing: number;
+  failing: number;
+  /** The runs disagree: at least one pass and at least one fail on the same commit. */
+  unstable: boolean;
+}
+
+function attemptStats(runs: CheckRunSummary[]): AttemptStats {
+  const completed = runs.filter(
+    (r) => r.id !== 0 && r.status === "completed" && r.conclusion !== null,
+  );
+  const passing = completed.filter((r) => PASSING.has(r.conclusion as string)).length;
+  const failing = completed.filter((r) => FAILING.has(r.conclusion as string)).length;
+  return {
+    attempts: completed.length,
+    passing,
+    failing,
+    unstable: passing > 0 && failing > 0,
+  };
+}
+
+function groupByName(runs: CheckRunSummary[]): Map<string, CheckRunSummary[]> {
+  const map = new Map<string, CheckRunSummary[]>();
+  for (const run of runs) {
+    const list = map.get(run.name) ?? [];
+    list.push(run);
+    map.set(run.name, list);
+  }
+  return map;
+}
+
+/**
+ * Pure classification: head runs vs base runs.
+ *
+ * Flaky evidence changes what a verdict may claim. Dedupe keeps the newest
+ * run per check, but the discarded runs are evidence too: when completed
+ * runs for a check on the same commit disagree (one passed, one failed,
+ * same code), that check is unstable, and a failing attribution that rests
+ * on a single outcome from an unstable side (introduced, pre-existing, or
+ * fixed-by-comparison) is withheld as indeterminate and flagged flaky.
+ * A passing latest outcome keeps its category, flagged, because the
+ * commit's current state is green either way.
+ */
 export function classifyRuns(
   headRuns: CheckRunSummary[],
   baseRuns: CheckRunSummary[],
@@ -256,11 +300,43 @@ export function classifyRuns(
 ): CheckVerdict[] {
   const head = dedupeRuns(headRuns);
   const base = dedupeRuns(baseRuns);
+  const headByName = groupByName(headRuns);
+  const baseByName = groupByName(baseRuns);
   const headWorkflowRan = headCheckRunCount > 0;
   const names = new Set<string>([...head.keys(), ...base.keys()]);
   const verdicts = [...names]
     .sort((a, b) => a.localeCompare(b))
-    .map((name) => classifyOne(name, head.get(name), base.get(name), headWorkflowRan))
+    .map((name) => {
+      const verdict = classifyOne(name, head.get(name), base.get(name), headWorkflowRan);
+      const hs = attemptStats(headByName.get(name) ?? []);
+      const bs = attemptStats(baseByName.get(name) ?? []);
+      if (hs.attempts > 1 || bs.attempts > 1) {
+        verdict.headAttempts = hs.attempts;
+        verdict.baseAttempts = bs.attempts;
+      }
+      if (hs.unstable || bs.unstable) {
+        verdict.flaky = true;
+        const sides: string[] = [];
+        if (hs.unstable) {
+          sides.push(`head had ${hs.passing} passing and ${hs.failing} failing completed runs on the same commit`);
+        }
+        if (bs.unstable) {
+          sides.push(`base had ${bs.passing} passing and ${bs.failing} failing completed runs on the same commit`);
+        }
+        const note = `Flaky evidence: ${sides.join("; ")}.`;
+        if (
+          verdict.category === "introduced" ||
+          verdict.category === "pre-existing" ||
+          verdict.category === "fixed"
+        ) {
+          verdict.detail = `${note} A single outcome from an unstable side cannot support the "${verdict.category}" attribution, so this is withheld as indeterminate. Newest outcomes: head ${verdict.headConclusion ?? "none"}, base ${verdict.baseConclusion ?? "none"}.`;
+          verdict.category = "indeterminate";
+        } else {
+          verdict.detail = `${verdict.detail} ${note}`;
+        }
+      }
+      return verdict;
+    })
     .filter((v) => {
       // Drop base-only non-failing checks: they say nothing about the PR
       // and only inflate the passing count.
@@ -311,6 +387,7 @@ export function buildReport(
     verdicts,
     counts,
     introduced: counts.introduced,
+    flaky: verdicts.filter((v) => v.flaky).length,
     warnings,
     checkedAt: new Date().toISOString(),
   };
@@ -554,6 +631,12 @@ export function renderReport(report: DiffReport): string {
   const passing = report.verdicts.filter((v) => v.category === "passing");
   if (passing.length > 0) {
     lines.push(`  [PASSING] ${passing.map((v) => v.name).join(", ")}`);
+  }
+  const flaky = report.verdicts.filter((v) => v.flaky);
+  if (flaky.length > 0) {
+    lines.push(
+      `  [FLAKY] ${flaky.map((v) => v.name).join(", ")}: completed runs on the same commit disagreed, so no confident attribution is made for these checks.`,
+    );
   }
   if (report.introduced > 0) {
     lines.push(

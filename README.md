@@ -26,6 +26,7 @@ cidiff was extracted from the CI triage inside [Greenlight](https://github.com/C
 - **Base failures are only "fixed" when the head actually ran checks.** On day one, dogfooding against a real fork PR (usebruno/bruno #9569) showed the trap: the PR's check suites were stuck at `action_required`, waiting for a maintainer to approve the workflow, so the head commit had zero check runs. A naive differ reported every base failure as fixed and every base pass as passing. cidiff detects the empty head, reads the check suites, and says in plain warnings: CI has not run on this head, these failures cannot be classified yet.
 - **Legacy commit statuses count as evidence.** Snyk, CodeRabbit, and older CI systems report through the Statuses API, not check runs. cidiff merges both, with real check runs winning on name collisions.
 - **External blockers classify first.** A failing Vercel preview is not a test failure, and a check that needs maintainer approval is not a code failure. Both are reported as external before any base comparison happens.
+- **Flaky evidence is not an attribution.** If completed runs for the same check on the same commit disagree (one passed, one failed, same code), the check is unstable. Comparative verdicts that would rest on a single outcome from an unstable side (introduced, pre-existing, fixed) are withheld as indeterminate and flagged `flaky` in the report, with the attempt counts recorded; a passing latest outcome keeps its passing verdict, flagged. The text report names flaky checks on a `[FLAKY]` line.
 
 ## Usage
 
@@ -100,7 +101,7 @@ cidiff is Wave 1, package 2 of a planned family of small, single-purpose develop
 ```bash
 npm install
 npm run build
-npm test   # 19 tests, classification logic runs on fixtures, no network
+npm test   # 31 tests, classification logic runs on fixtures, no network
 ```
 
 ## License
